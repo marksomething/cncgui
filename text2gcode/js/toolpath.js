@@ -604,28 +604,48 @@
     };
     const allProbes = loops.map(probesOf);
 
-    // pairwise boundary-crossing detection (bbox-filtered)
-    const crosses = loops.map(() => false);
+    // pairwise boundary-crossing detection (bbox-filtered).
+    // crosses[i] = list of loop indices whose BOUNDARY crosses loop i's.
+    const crosses = loops.map(() => []);
     for (let i = 0; i < loops.length; i++) {
       for (let j = i + 1; j < loops.length; j++) {
         if (!bboxesOverlap(boxes[i], boxes[j], 0.1)) continue;
         if (loopsCross(CL, toClip, loops[i], loops[j])) {
-          crosses[i] = true;
-          crosses[j] = true;
+          crosses[i].push(j);
+          crosses[j].push(i);
         }
       }
     }
 
-    // hole = odd-parity nesting of ALL probes, and no crossings
+    // Native orientation of each loop (glyphs arrive from the font this way).
+    const signs = loops.map((pts) => Math.sign(signedArea(pts)) || 1);
+
+    // hole = odd-parity nesting of ALL probes, and no same-sign crossings.
+    //
+    // Crossing semantics depend on the native orientation signs:
+    //  - SAME sign  = two overlapping material strokes (script fonts, a
+    //    diagonal overshooting a bar) -> union semantics, never a hole.
+    //  - OPPOSITE sign = normal glyph construction: a counter tucks slightly
+    //    under a separately drawn stroke (Roboto's 'd': bowl, ascender stem
+    //    and counter are three loops, and the counter's right edge runs a
+    //    hair under the stem). This must NOT disqualify the hole.
+    //
+    // For the parity count, an opposite-sign crossing partner is SKIPPED:
+    // it only partially covers the candidate hole (the tuck-under sliver),
+    // so probes in that sliver would see even parity and wrongly reject a
+    // genuine counter. Same-sign crossing partners stay in the count —
+    // their partial coverage helps keep stroke loops material.
     const isHole = [];
     for (let i = 0; i < loops.length; i++) {
       let hole = false;
-      if (!crosses[i] && allProbes[i].length) {
+      const sameSignCross = crosses[i].some((j) => signs[j] === signs[i]);
+      if (!sameSignCross && allProbes[i].length) {
         hole = true;
+        const skip = new Set(crosses[i].filter((j) => signs[j] !== signs[i]));
         for (const q of allProbes[i]) {
           let parity = 0;
           for (let j = 0; j < loops.length; j++) {
-            if (j === i) continue;
+            if (j === i || skip.has(j)) continue;
             if (!bboxesOverlap(boxes[i], boxes[j], 0.1)) continue;
             if (pointInRegion(q[0], q[1], [{ pts: loops[j] }])) parity++;
           }
