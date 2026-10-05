@@ -537,82 +537,135 @@
   }
 
   /**
-   * Union all closed glyph contours into non-overlapping loops.
-   * Uses polybooljs (global PolyBool). Optimization: loops are grouped by
-   * bounding-box overlap into clusters; isolated loops pass through untouched
-   * (no expensive union), overlapping clusters are unioned with simplified
-   * geometry. Falls back to the input contours if PolyBool is unavailable.
+   * Do two loops' BOUNDARIES cross (strokes overlap), as opposed to one
+   * merely nesting inside the other? Computed via Clipper intersection of
+   * the even-odd regions: nested-disjoint loops intersect in zero area
+   * (the inner region is a hole of the outer), while crossing strokes
+   * share a partial area (strictly between 0 and the smaller loop's area).
+   */
+  function loopsCross(CL, toClip, aPts, bPts) {
+    const areaA = Math.abs(signedArea(aPts));
+    const areaB = Math.abs(signedArea(bPts));
+    const c = new CL.Clipper();
+    c.AddPath(toClip(aPts), CL.PolyType.ptSubject, true);
+    c.AddPath(toClip(bPts), CL.PolyType.ptClip, true);
+    const sol = new CL.Paths();
+    c.Execute(CL.ClipType.ctIntersection, sol, CL.PolyFillType.pftEvenOdd, CL.PolyFillType.pftEvenOdd);
+    let area = 0;
+    for (const pl of sol) area += signedArea(pl.map((p) => [p.X / 1000, p.Y / 1000]));
+    area = Math.abs(area);
+    return area > 0.001 && area < Math.min(areaA, areaB) * 0.999;
+  }
+
+  /**
+   * Repair glyph outlines and union them with MATERIAL = UNION semantics.
+   *
+   * Why: glyph outlines frequently self-intersect (a diagonal stroke
+   * overshoots a bar and crosses it — Montserrat's Z, many script fonts).
+   * Even-odd semantics XOR the doubly-covered triangles into holes, causing
+   * triangular gaps in pocket rings and spurious cutouts in boss mode.
+   * NonZero union reads any covered area as material — but only works if
+   * hole loops (glyph counters like the inside of O) are oriented opposite.
+   *
+   * Hole classification (per loop):
+   *   hole  = every ε-inward probe lies inside an ODD number of other loops
+   *           (true nesting: O's counter inside its outer, island-in-lake)
+   *           AND the loop crosses no other loop (zero intersection area —
+   *           a genuinely separate boundary, not an overlapping stroke)
+   *   else  = material
+   * Then: material CCW(+), holes CW(−), one NonZero union. Self-crossing
+   * material loops fill correctly (winding ±2 regions stay filled).
+   */
+  function repairGlyphLoops(loops) {
+    const CL = getClipperLib();
+    if (!CL) return loops.map((l) => ({ pts: l.slice(), closed: true }));
+    if (!loops.length) return [];
+    const SCL = 1000;
+    const toClip = (pts) => pts.map((p) => ({ X: Math.round(p[0] * SCL), Y: Math.round(p[1] * SCL) }));
+    const fromClip = (paths) => paths.map((pl) => pl.map((p) => [p.X / SCL, p.Y / SCL]));
+
+    const boxes = loops.map(loopBounds);
+
+    // ε-inward probes from edge midpoints (hug the boundary of THIS loop,
+    // capped in count for performance)
+    const probesOf = (pts) => {
+      const sign = Math.sign(signedArea(pts)) || 1;
+      const probes = [];
+      const step = Math.max(1, Math.floor(pts.length / 32));
+      for (let i = 0; i < pts.length; i += step) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+        const len = Math.hypot(nx, ny) || 1;
+        nx /= len; ny /= len;
+        if (sign < 0) { nx = -nx; ny = -ny; } // inward = left normal when CCW
+        probes.push([(a[0] + b[0]) / 2 + nx * 0.02, (a[1] + b[1]) / 2 + ny * 0.02]);
+      }
+      return probes;
+    };
+    const allProbes = loops.map(probesOf);
+
+    // pairwise boundary-crossing detection (bbox-filtered)
+    const crosses = loops.map(() => false);
+    for (let i = 0; i < loops.length; i++) {
+      for (let j = i + 1; j < loops.length; j++) {
+        if (!bboxesOverlap(boxes[i], boxes[j], 0.1)) continue;
+        if (loopsCross(CL, toClip, loops[i], loops[j])) {
+          crosses[i] = true;
+          crosses[j] = true;
+        }
+      }
+    }
+
+    // hole = odd-parity nesting of ALL probes, and no crossings
+    const isHole = [];
+    for (let i = 0; i < loops.length; i++) {
+      let hole = false;
+      if (!crosses[i] && allProbes[i].length) {
+        hole = true;
+        for (const q of allProbes[i]) {
+          let parity = 0;
+          for (let j = 0; j < loops.length; j++) {
+            if (j === i) continue;
+            if (!bboxesOverlap(boxes[i], boxes[j], 0.1)) continue;
+            if (pointInRegion(q[0], q[1], [{ pts: loops[j] }])) parity++;
+          }
+          if (parity % 2 === 0) { hole = false; break; }
+        }
+      }
+      isHole.push(hole);
+    }
+
+    // orient material CCW(+), holes CW(−), then one NonZero union
+    const clipLoops = loops.map((pts, i) => {
+      const positive = signedArea(pts) > 0;
+      if (isHole[i] === positive) return toClip(pts.slice().reverse());
+      return toClip(pts);
+    });
+    const c = new CL.Clipper();
+    c.AddPaths(clipLoops, CL.PolyType.ptSubject, true);
+    const solution = new CL.Paths();
+    c.Execute(CL.ClipType.ctUnion, solution, CL.PolyFillType.pftNonZero, CL.PolyFillType.pftNonZero);
+    return fromClip(solution)
+      .filter((pl) => pl.length >= 3)
+      .map((pl) => ({ pts: simplify(pl, 0.002), closed: true }));
+  }
+
+  /**
+   * Union all closed glyph contours into non-overlapping loops with correct
+   * hole nesting. Self-intersecting glyph outlines are repaired with union
+   * semantics first (see repairGlyphLoops). Requires Clipper; falls back to
+   * passing loops through untouched.
    * opts: { tol: simplification tolerance (mm, default 0.04) }
    */
   function unionContours(contours, opts) {
     opts = opts || {};
     const closed = contours.filter((c) => c.closed && c.pts.length > 2);
-    const PB = getPolyBool();
-    if (closed.length < 2 || !PB) {
-      return closed.map((c) => ({ pts: c.pts.slice(), closed: true }));
-    }
+    if (!closed.length) return [];
     const tol = opts.tol != null ? opts.tol : 0.04;
-
-    // cluster loops whose bounds overlap (union-find)
-    const boxes = closed.map((c) => loopBounds(c.pts));
-    const parent = closed.map((_, i) => i);
-    const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-    for (let i = 0; i < closed.length; i++) {
-      for (let j = i + 1; j < closed.length; j++) {
-        if (bboxesOverlap(boxes[i], boxes[j], tol)) {
-          parent[find(i)] = find(j);
-        }
-      }
-    }
-
-    const clusters = new Map();
-    closed.forEach((c, i) => {
-      const r = find(i);
-      if (!clusters.has(r)) clusters.set(r, []);
-      clusters.get(r).push(c);
-    });
-
-    const out = [];
-    for (const group of clusters.values()) {
-      if (group.length === 1) {
-        out.push({ pts: group[0].pts.slice(), closed: true });
-        continue;
-      }
-      try {
-        // Split loops into outer boundaries vs holes (by winding), because
-        // unioning a hole loop as a standalone polygon would turn it into a
-        // solid and erase the hole. Outers are unioned together, then holes
-        // are subtracted (difference).
-        let bigIdx = 0, bigArea = 0;
-        group.forEach((c, g) => {
-          const a = Math.abs(signedArea(c.pts));
-          if (a > bigArea) { bigArea = a; bigIdx = g; }
-        });
-        const outerSign = Math.sign(signedArea(group[bigIdx].pts)) || -1;
-        const outers = [], holes = [];
-        for (const c of group) {
-          (Math.sign(signedArea(c.pts)) === outerSign ? outers : holes).push(c);
-        }
-        let acc = null;
-        for (const o of outers) {
-          const poly = { regions: [simplifyClosed(o.pts, tol)], invert: false };
-          acc = acc ? PB.union(acc, poly) : poly;
-        }
-        for (const h of holes) {
-          if (!acc) { acc = { regions: [simplifyClosed(h.pts, tol)], invert: false }; continue; }
-          acc = PB.difference(acc, { regions: [simplifyClosed(h.pts, tol)], invert: false });
-        }
-        if (acc) {
-          for (const r of acc.regions) {
-            if (r.length >= 3) out.push({ pts: r.map((p) => [p[0], p[1]]), closed: true });
-          }
-        }
-      } catch (e) {
-        console.warn('union failed, falling back to raw loops', e);
-        for (const c of group) out.push({ pts: c.pts.slice(), closed: true });
-      }
-    }
-    return out;
+    const loops = closed.map((c) => simplifyClosed(c.pts, tol));
+    const repaired = repairGlyphLoops(loops);
+    if (repaired.length) return repaired;
+    return closed.map((c) => ({ pts: c.pts.slice(), closed: true }));
   }
 
   // ------------------------------------------------------------------
