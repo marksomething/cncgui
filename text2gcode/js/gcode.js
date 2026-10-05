@@ -48,9 +48,10 @@
       if (pts.length < 2) continue;
       const start = pts[0];
       const end = pts[pts.length - 1];
-      // rapid positioning at safe height
+      // rapid positioning at safe height — carries from→to so the sim can
+      // draw and animate the dashed travel segment
       const rl = Math.hypot(start[0] - prevX, start[1] - prevY);
-      pushMove('rapid', [[start[0], start[1]]], safeZ, 0, rl, fRapid);
+      pushMove('rapid', [[prevX, prevY], [start[0], start[1]]], safeZ, 0, rl, fRapid);
       rapidLen += rl;
       prevX = start[0]; prevY = start[1];
       for (let p = 0; p < passes; p++) {
@@ -139,7 +140,8 @@
         firstCutInPass = true;
       }
       if (mv.type === 'rapid') {
-        emit(`G0 X${fmt(mv.pts[0][0])} Y${fmt(mv.pts[0][1])}`, { move: mi });
+        const dst = mv.pts[mv.pts.length - 1];
+        emit(`G0 X${fmt(dst[0])} Y${fmt(dst[1])}`, { move: mi });
       } else if (mv.type === 'retract') {
         // Z-only rapid lift after each depth pass (the final retract of the
         // last pass doubles as the end-of-program retract)

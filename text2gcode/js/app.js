@@ -517,8 +517,8 @@
       ctx.stroke();
     }
 
-    // tool position marker
-    const pos = mv.type === 'cut' ? mv.pts[gcodeHighlight.pt] : mv.pts[0];
+    // tool position marker (for rapid/retract/plunge: the destination point)
+    const pos = mv.type === 'cut' ? mv.pts[gcodeHighlight.pt] : mv.pts[mv.pts.length - 1];
     if (pos) {
       const rmm = lastResult.tool.diameter / 2;
       ctx.strokeStyle = '#f0abfc';
