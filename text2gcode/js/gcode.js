@@ -117,7 +117,7 @@
     emit(`; ${now.toISOString()}`);
     emit(`; Text: ${String(m.text).replace(/\n/g, ' / ').slice(0, 80)}`);
     emit(`; Font: ${m.font} | Mode: ${m.mode}`);
-    emit(`; Tool: ${m.toolDiameter}mm ${m.toolType} | Cut depth: ${s.cutDepth}mm in ${info.passes} pass(es)`);
+    emit(`; Tool diameter: ${m.toolDiameter}mm | Cut depth: ${s.cutDepth}mm in ${info.passes} pass(es)`);
     emit(`; Feed: XY ${s.feedXY}mm/min, plunge ${s.feedPlunge}mm/min | Spindle ${s.spindleRPM}rpm`);
     emit('');
     emit('G90 ; absolute positioning');

@@ -49,7 +49,6 @@
     fontHint: $('fontHint'),
     modeHint: $('modeHint'),
     toolDiameter: $('toolDiameter'),
-    toolType: $('toolType'),
     pocketOptions: $('pocketOptions'),
     stepover: $('stepover'),
     contourPass: $('contourPass'),
@@ -77,7 +76,7 @@
   };
 
   const MODE_HINTS = {
-    single: 'Engraves fast single-stroke strokes along the middle of every letter — ideal for V-bits and engraving cutters.',
+    single: 'Engraves fast single-stroke paths along the middle of every letter.'
     boss: 'Leaves the letters as a raised boss: traces around the UNION of all letters, offset outward by the tool radius. Overlapping letters merge into one boundary — no cut lines between them.',
     pocket: 'Carves concentric rings that follow the letter shapes: the first pass hugs the boundary (tool edge exactly on it, offset by the tool radius), then rings step inward by the stepover until the pocket is cleared.',
   };
@@ -311,7 +310,6 @@
       font: font.label,
       mode: currentMode,
       toolDiameter: tool.diameter,
-      toolType: els.toolType.value,
     };
     const gen = GCodeGen.generate({ moves: built.moves, passes: built.passes, stats: built.stats, settings, meta });
 
@@ -760,7 +758,7 @@
     if (ttf) {
       els.fontHint.innerHTML = 'Outline (TTF) font — supports <b>boss</b> &amp; <b>pocket</b> modes. Load any .ttf/.otf you own.';
     } else {
-      els.fontHint.innerHTML = 'Single-stroke engraving font (Hershey) — one pass per stroke, no fill needed. Fastest option for V-bits.';
+      els.fontHint.innerHTML = 'Single-stroke engraving font (Hershey) — one pass per stroke, no fill needed. Fast for simple text engraving.';
     }
   }
 
@@ -777,7 +775,7 @@
   [els.height, els.lineSpacing, els.letterSpacing, els.toolDiameter, els.stepover].forEach((el) => {
     el.addEventListener('input', () => { setSliderFill(el); scheduleRegen(); });
   });
-  [els.align, els.toolType, els.contourPass, els.returnHome,
+  [els.align, els.contourPass, els.returnHome,
    els.safeZ, els.cutDepth, els.passDepth, els.spindleRPM, els.feedXY, els.feedPlunge, els.rapidFeed].forEach((el) => {
     el.addEventListener('change', scheduleRegen);
   });

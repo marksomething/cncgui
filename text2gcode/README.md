@@ -15,7 +15,7 @@ A self-contained static website that converts **text + a font choice** into a
     Serif medium/bold, Script 1-stroke/medium, Gothic English
   - **Load your own `.ttf` / `.otf`** via the upload button — any normal font works
 - **Engraving modes**
-  - **Single line** — fast centerline engraving using single-stroke fonts (ideal for V-bits)
+  - **Single line** — fast centerline engraving using single-stroke fonts
   - **Boss** — leaves the letters as a raised region: all glyphs are unioned
     (letters considered together), then the boundary is offset OUTWARD by the
     tool radius. Overlapping letters merge into a single boundary, so no cut
@@ -27,7 +27,7 @@ A self-contained static website that converts **text + a font choice** into a
     the pocket is fully cleared. Also operates on the union, so overlapping
     letters pocket as one.
 - **Layout controls**: text height, multi-line text, line spacing, letter spacing, alignment
-- **Tool controls**: diameter, tool type, depth per pass, multiple depth passes
+- **Tool controls**: diameter, depth per pass, multiple depth passes
 - **Machine settings**: safe Z, cut depth, feeds (XY + plunge), spindle RPM, return to home
 - **Live preview** of the toolpath on a gridded canvas (cut swathes shown at tool width)
 - **▶ Simulate** — animates the exact path the machine will take, including rapids
