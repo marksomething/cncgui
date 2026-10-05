@@ -59,6 +59,7 @@
     spindleRPM: $('spindleRPM'),
     feedXY: $('feedXY'),
     feedPlunge: $('feedPlunge'),
+    rapidFeed: $('rapidFeed'),
     returnHome: $('returnHome'),
     preview: $('preview'),
     previewEmpty: $('previewEmpty'),
@@ -250,7 +251,7 @@
       feedXY: Math.max(10, num(els.feedXY, 800)),
       feedPlunge: Math.max(5, num(els.feedPlunge, 200)),
       spindleRPM: Math.max(0, num(els.spindleRPM, 12000)),
-      rapidFeed: 3000,
+      rapidFeed: Math.max(10, num(els.rapidFeed, 3200)),
       returnHome: els.returnHome.checked,
     };
   }
@@ -772,7 +773,7 @@
     el.addEventListener('input', () => { setSliderFill(el); scheduleRegen(); });
   });
   [els.align, els.toolType, els.contourPass, els.returnHome,
-   els.safeZ, els.cutDepth, els.passDepth, els.spindleRPM, els.feedXY, els.feedPlunge].forEach((el) => {
+   els.safeZ, els.cutDepth, els.passDepth, els.spindleRPM, els.feedXY, els.feedPlunge, els.rapidFeed].forEach((el) => {
     el.addEventListener('change', scheduleRegen);
   });
 
@@ -788,6 +789,7 @@
     [els.passDepth, 'passDepthVal', (v) => v + ' mm'],
     [els.feedXY, 'feedXYVal', (v) => v],
     [els.feedPlunge, 'feedPlungeVal', (v) => v],
+    [els.rapidFeed, 'rapidFeedVal', (v) => v],
     [els.simSpeed, 'simSpeedVal', (v) => {
       const x = parseFloat(v);
       return Math.abs(x - 1) < 1e-9 ? '×1.0 · real time' : '×' + x.toFixed(2).replace(/\.?0+$/, '');

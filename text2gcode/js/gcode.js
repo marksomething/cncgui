@@ -29,7 +29,7 @@
     const passes = Math.max(1, Math.ceil(cutDepth / passDepth));
     const fCut = Math.max(1, settings.feedXY);
     const fPlunge = Math.max(1, settings.feedPlunge);
-    const fRapid = Math.max(1, settings.rapidFeed || 3000);
+    const fRapid = Math.max(1, settings.rapidFeed || 3200);
 
     const moves = [];
     let cutLen = 0;      // total cutting travel (all passes)
