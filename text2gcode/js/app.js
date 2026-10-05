@@ -219,6 +219,7 @@
   }
 
   function fmtTime(min) {
+    if (!isFinite(min)) return '—';
     if (min < 1) return Math.round(min * 60) + ' s';
     if (min < 90) return min.toFixed(1) + ' min';
     return (min / 60).toFixed(1) + ' h';
@@ -549,14 +550,18 @@
   // Simulation ("demo the path taken")
   // ------------------------------------------------------------------
   function resetSim() {
-    sim = { active: false, playing: false, moveIdx: 0, tInto: 0, done: false };
+    // canonical sim state — startSim() builds on this, so the shape only
+    // exists here (a missing field here was the source of a NaN display bug)
+    sim = { active: false, playing: false, moveIdx: 0, tInto: 0, elapsed: 0, done: false };
     els.simStatus.classList.add('hidden');
     els.btnSim.textContent = '▶ Simulate';
   }
 
   function startSim() {
     if (!lastResult || !lastResult.moves.length) return;
-    sim = { active: true, playing: true, moveIdx: 0, tInto: 0, done: false };
+    resetSim();
+    sim.active = true;
+    sim.playing = true;
     els.btnSim.textContent = '⏸ Pause';
     els.simStatus.classList.remove('hidden');
     sim.lastT = performance.now();
