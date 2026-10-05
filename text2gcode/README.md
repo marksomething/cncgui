@@ -67,6 +67,20 @@ origin at the bottom-left of the text block.
 ⚠️ Always air-cut / dry-run and verify the generated GCode in your machine's
 simulator before cutting real material.
 
+## Tests
+
+Geometry regression tests (no dependencies — uses node's built-in test runner):
+
+```
+node --test text2gcode/test/glyphs.test.js
+```
+
+They assert that glyph counters (the holes in b, d, o, 8, %, …) survive the
+union for every bundled outline font, plus pocket/boss ring behaviour and
+Clipper-offset sanity. The original regression they guard against: Roboto's
+`d` (also b, p, q, g) has a counter that tucks under its separately-drawn
+stem — a naive "crossing loops are strokes" rule fills it in.
+
 ## Troubleshooting
 
 **Something broken? An error box appears in the bottom-right of the page**
