@@ -178,8 +178,10 @@
     if (!ok) {
       fonts.delete('ttf:roboto');
       selectedFontId = 'hershey:futural';
+      setMode('single', true); // Hershey line fonts are single-line only
     }
     initFontSelect();
+    syncModeAvailability(); // actual font now known (Roboto or Hershey fallback)
     els.previewEmpty.textContent = 'Enter some text to preview the toolpath ✦';
     regenerate();
   }
@@ -746,7 +748,10 @@
 
   function syncModeAvailability() {
     const font = selectedFont();
-    const ttf = font && font.kind === 'ttf';
+    // Before initFonts() has run there is no selected font; treat that as the
+    // outline-font default (boss/pocket enabled) so boot doesn't leave the
+    // mode buttons in an inverted state (pocket active but disabled).
+    const ttf = font ? font.kind === 'ttf' : true;
     // guard: never hard-crash the app over a missing mode button
     [['single', ttf], ['boss', !ttf], ['pocket', !ttf]].forEach(([m, dis]) => {
       const btn = document.querySelector('[data-mode="' + m + '"]');
