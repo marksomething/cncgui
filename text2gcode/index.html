@@ -40,7 +40,7 @@ CNC</textarea>
           </label>
           <label class="field">
             <span>Letter spacing <em id="letterSpacingVal">0 mm</em></span>
-            <input type="range" id="letterSpacing" min="-2" max="10" step="0.1" value="0" />
+            <input type="range" id="letterSpacing" min="-10" max="10" step="0.1" value="0" />
           </label>
         </div>
         <div class="row">
@@ -189,7 +189,7 @@ CNC</textarea>
           <button id="btnCopy" class="btn ghost" disabled>⧉ Copy</button>
           <button id="btnToggleGcode" class="btn ghost">‹ ›</button>
         </div>
-        <div id="gcodePanel" class="gcode-panel hidden">
+        <div id="gcodePanel" class="gcode-panel hidden" title="Click any G0/G1 line to see the toolpath it creates in the preview">
           <pre id="gcodePreview"></pre>
         </div>
       </div>

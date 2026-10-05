@@ -84,9 +84,10 @@
   // ------------------------------------------------------------------
   // State
   // ------------------------------------------------------------------
-  let lastResult = null;    // { moves, passes, stats, gcode, settings, meta }
+  let lastResult = null;    // { moves, passes, stats, gcode, gcodeLineMap, settings, meta }
   let currentMode = 'boss';
   let sim = { active: false, playing: false, moveIdx: 0, distInto: 0, done: false };
+  let gcodeHighlight = null; // { line, move, pt } — gcode line clicked in preview
 
   // ------------------------------------------------------------------
   // Font loading
@@ -308,9 +309,10 @@
       toolDiameter: tool.diameter,
       toolType: els.toolType.value,
     };
-    const gcode = GCodeGen.generate({ moves: built.moves, passes: built.passes, stats: built.stats, settings, meta });
+    const gen = GCodeGen.generate({ moves: built.moves, passes: built.passes, stats: built.stats, settings, meta });
 
-    lastResult = { moves: built.moves, passes: built.passes, stats: built.stats, gcode, settings, meta, tool };
+    lastResult = { moves: built.moves, passes: built.passes, stats: built.stats, gcode: gen.text, gcodeLineMap: gen.lineMap, settings, meta, tool };
+    gcodeHighlight = null;
     render();
   }
 
@@ -448,6 +450,7 @@
   function renderPreview() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return; // not laid out yet — skip drawing entirely
+    updateHighlightStatus();
     const dpr = window.devicePixelRatio || 1;
     if (canvas.width !== w * dpr) {
       canvas.width = w * dpr;
@@ -466,9 +469,79 @@
 
     if (sim.active) {
       drawSimulation();
+    } else if (gcodeHighlight) {
+      drawHighlight();
     } else {
       for (const mv of lastResult.moves) drawMovePath(mv, null);
     }
+  }
+
+  /** Draw the toolpath created by the gcode line clicked in the preview. */
+  function drawHighlight() {
+    const moves = lastResult.moves;
+    // everything else faint
+    ctx.globalAlpha = 0.12;
+    for (let i = 0; i < moves.length; i++) drawMovePath(moves[i], null);
+    ctx.globalAlpha = 1;
+
+    const mv = moves[gcodeHighlight.move];
+    if (!mv) return;
+
+    if (mv.type === 'cut') {
+      // containing toolpath in bright highlight
+      ctx.strokeStyle = '#f0abfc';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      strokePolyline(mv.pts, null);
+    } else if (mv.type === 'rapid') {
+      ctx.strokeStyle = 'rgba(240,171,252,.9)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      strokePolyline(mv.pts, null);
+      ctx.setLineDash([]);
+    }
+
+    // the exact segment this line cuts (from previous point to this point)
+    if (mv.type === 'cut' && gcodeHighlight.pt > 0) {
+      const a = mv.pts[gcodeHighlight.pt - 1];
+      const b = mv.pts[gcodeHighlight.pt];
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(toX(a[0]), toY(a[1]));
+      ctx.lineTo(toX(b[0]), toY(b[1]));
+      ctx.stroke();
+    }
+
+    // tool position marker
+    const pos = mv.type === 'cut' ? mv.pts[gcodeHighlight.pt] : mv.pts[0];
+    if (pos) {
+      const rmm = lastResult.tool.diameter / 2;
+      ctx.strokeStyle = '#f0abfc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(toX(pos[0]), toY(pos[1]), Math.max(3, rmm * view.scale), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(toX(pos[0]), toY(pos[1]), 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function updateHighlightStatus() {
+    if (gcodeHighlight && lastResult && !sim.active) {
+      const mv = lastResult.moves[gcodeHighlight.move];
+      if (mv) {
+        els.simStatus.textContent = 'Line ' + (gcodeHighlight.line + 1) + ' — ' +
+          (mv.type === 'rapid' ? 'rapid move' : mv.type === 'plunge' ? 'plunge' : 'cut') +
+          ' · Z ' + mv.z.toFixed(3) + 'mm · pass ' + ((mv.pass || 0) + 1) + '/' + lastResult.passes;
+        els.simStatus.classList.remove('hidden');
+        return;
+      }
+    }
+    if (!sim.active) els.simStatus.classList.add('hidden');
   }
 
   // ------------------------------------------------------------------
@@ -624,12 +697,29 @@
     }
   }
 
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   function updateGcodePreview() {
-    if (!lastResult) return;
+    if (!lastResult) { els.gcodePreview.innerHTML = ''; return; }
     const lines = lastResult.gcode.split('\n');
-    const shown = lines.slice(0, 400);
-    els.gcodePreview.textContent = shown.join('\n') +
-      (lines.length > shown.length ? `\n… (${lines.length - shown.length} more lines)` : '');
+    const map = lastResult.gcodeLineMap || [];
+    const shown = Math.min(lines.length, 400);
+    let html = '';
+    for (let i = 0; i < shown; i++) {
+      const clickable = !!map[i];
+      html += '<div class="gline' + (clickable ? ' gline-move' : '') +
+        (gcodeHighlight && gcodeHighlight.line === i ? ' selected' : '') +
+        '" data-line="' + i + '">' + escapeHtml(lines[i]) + '</div>';
+    }
+    if (lines.length > shown) {
+      html += '<div class="gline">… (' + (lines.length - shown) + ' more lines)</div>';
+    }
+    els.gcodePreview.innerHTML = html;
+    // keep the selected line visible
+    const sel = els.gcodePreview.querySelector('.gline.selected');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
 
   // ------------------------------------------------------------------
@@ -778,6 +868,28 @@
 
   els.btnToggleGcode.addEventListener('click', () => {
     els.gcodePanel.classList.toggle('hidden');
+  });
+
+  // Click a gcode line → show the toolpath it creates in the preview
+  els.gcodePreview.addEventListener('click', (e) => {
+    const div = e.target.closest('.gline');
+    if (!div || !lastResult || !lastResult.gcodeLineMap) return;
+    const idx = parseInt(div.dataset.line, 10);
+    if (!isFinite(idx)) return;
+    const ref = lastResult.gcodeLineMap[idx];
+    if (gcodeHighlight && gcodeHighlight.line === idx) {
+      // clicked again → deselect
+      gcodeHighlight = null;
+      updateGcodePreview();
+      renderPreview();
+      return;
+    }
+    if (!ref) { gcodeHighlight = null; updateGcodePreview(); renderPreview(); return; }
+    if (sim.active) resetSim();
+    gcodeHighlight = { line: idx, move: ref.move, pt: ref.pt };
+    updateGcodePreview();
+    renderPreview();
+    // scroll preview... nothing to do — the highlight is drawn in view
   });
 
   window.addEventListener('resize', () => {
