@@ -112,24 +112,16 @@ CNC</textarea>
         </div>
         <p class="hint">Boss &amp; pocket automatically offset by the <b>tool radius</b> (half the tool diameter), so the tool edge lands exactly on the letter boundary.</p>
         <div id="pocketOptions" class="hidden">
-          <div class="row two">
+          <div class="row">
             <label class="field">
               <span>Stepover <em id="stepoverVal">45%</em></span>
               <input type="range" id="stepover" min="5" max="95" step="1" value="45" />
             </label>
-            <label class="field">
-              <span>Hatch angle</span>
-              <select id="hatchAngle">
-                <option value="0" selected>0° (horizontal)</option>
-                <option value="45">45°</option>
-                <option value="90">90° (vertical)</option>
-              </select>
-            </label>
           </div>
           <div class="row checks">
-            <label class="check"><input type="checkbox" id="contourPass" checked /> Contour pass around letters</label>
-            <label class="check"><input type="checkbox" id="zigzag" /> Connect fill lines (zigzag)</label>
+            <label class="check"><input type="checkbox" id="contourPass" checked /> Contour pass on the boundary</label>
           </div>
+          <p class="hint">Rings follow the letter outlines, stepping inward by the stepover until the pocket is cleared — the tool never leaves the letter shape.</p>
         </div>
       </section>
 

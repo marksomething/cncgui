@@ -21,9 +21,11 @@ A self-contained static website that converts **text + a font choice** into a
     tool radius. Overlapping letters merge into a single boundary, so no cut
     line runs between touching letters. Letter counters (holes, e.g. in O) stay
     intact and are traced as well.
-  - **Pocket** — clears the letter interiors: contour pass offset INWARD by the
-    tool radius plus hatch fill with controllable stepover, hatch angle, zigzag
-    connection. Also operates on the union, so overlapping letters pocket as one.
+  - **Pocket** — contour-parallel pocketing: rings that follow the letter
+    shapes. The first pass hugs the boundary (tool edge exactly on it, offset
+    inward by the tool radius), then rings step inward by the stepover until
+    the pocket is fully cleared. Also operates on the union, so overlapping
+    letters pocket as one.
 - **Layout controls**: text height, multi-line text, line spacing, letter spacing, alignment
 - **Tool controls**: diameter, tool type, depth per pass, multiple depth passes
 - **Machine settings**: safe Z, cut depth, feeds (XY + plunge), spindle RPM, return to home
@@ -54,7 +56,7 @@ files.
 | Single-stroke | Embedded Hershey font data (path strokes + derived advances) |
 | Union | `polybooljs` boolean union per overlap-cluster (bbox grouping keeps it fast — no union cost for well-separated text) |
 | Offsetting | Clipper (ClipperOffset) with round joins — handles acute corners, removes self-intersections, auto-drops features narrower than the tool |
-| Pocket fill | Rotated scanline rasterization (even-odd rule handles holes) |
+| Pocket fill | Contour-parallel rings: iterative inward Clipper offsets (tool radius first, then stepover) with self-intersection cleanup per ring |
 | GCode | Expand polylines into depth passes: rapid → plunge → feed → retract |
 
 GCode uses millimeters, absolute positioning (G90), the XY plane (G17) and

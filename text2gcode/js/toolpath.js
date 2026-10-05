@@ -373,17 +373,18 @@
    * input loops would XOR-cancel — callers must union first (they do).
    */
   function normalizeLoopsViaClipper(loops) {
-    if (typeof ClipperLib === 'undefined') return null;
+    const CL = getClipperLib();
+    if (!CL) return null;
     const SCL = 1000;
     const paths = loops
       .filter((l) => l.pts && l.pts.length > 2)
       .map((l) => l.pts.map((p) => ({ X: Math.round(p[0] * SCL), Y: Math.round(p[1] * SCL) })));
     if (!paths.length) return [];
-    const c = new ClipperLib.Clipper();
-    c.AddPaths(paths, ClipperLib.PolyType.ptSubject, true);
-    const tree = new ClipperLib.PolyTree();
-    c.Execute(ClipperLib.ClipType.ctUnion, tree,
-      ClipperLib.PolyFillType.pftEvenOdd, ClipperLib.PolyFillType.pftEvenOdd);
+    const c = new CL.Clipper();
+    c.AddPaths(paths, CL.PolyType.ptSubject, true);
+    const tree = new CL.PolyTree();
+    c.Execute(CL.ClipType.ctUnion, tree,
+      CL.PolyFillType.pftEvenOdd, CL.PolyFillType.pftEvenOdd);
     const out = [];
     (function walk(node, depth) {
       const childs = node.Childs();
@@ -402,20 +403,50 @@
     return out;
   }
 
+  /**
+   * Resolve a library global robustly: bare identifier (classic scripts),
+   * or attached to window/self/globalThis (works in module scope too).
+   * Checks ALL candidates — some environments have window !== self.
+   */
+  function resolveLib(name) {
+    try {
+      if (typeof eval(name) !== 'undefined') return eval(name);
+    } catch (e) { /* not a bare global */ }
+    const cands = [];
+    if (typeof window !== 'undefined') cands.push(window);
+    if (typeof self !== 'undefined') cands.push(self);
+    if (typeof globalThis !== 'undefined') cands.push(globalThis);
+    if (typeof global !== 'undefined') cands.push(global);
+    for (const g of cands) {
+      if (g && g[name]) return g[name];
+    }
+    return null;
+  }
+
+  function getClipperLib() { return resolveLib('ClipperLib'); }
+  function getPolyBool() { return resolveLib('PolyBool'); }
+
   /** Offset loops (any orientation) by delta mm; positive delta GROWS the region. */
   function clipperOffsetLoops(loops, delta) {
-    if (typeof ClipperLib === 'undefined') return null; // caller decides fallback
+    const CL = getClipperLib();
+    if (!CL) return null; // caller decides fallback
     if (Math.abs(delta) < EPS) return loops.map((l) => l.pts.slice());
     const normalized = normalizeLoopsViaClipper(loops);
     if (!normalized) return null;
     const SCL = 1000; // 0.001 mm integer precision
     const paths = normalized.map((l) =>
       l.pts.map((p) => ({ X: Math.round(p[0] * SCL), Y: Math.round(p[1] * SCL) })));
-    const co = new ClipperLib.ClipperOffset(2, 0.025 * SCL); // miterLimit, 0.025mm arc tolerance
-    co.AddPaths(paths, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
+    const co = new CL.ClipperOffset(2, 0.025 * SCL); // miterLimit, 0.025mm arc tolerance
+    co.AddPaths(paths, CL.JoinType.jtRound, CL.EndType.etClosedPolygon);
     const sol = [];
     co.Execute(sol, delta * SCL);
-    return sol.map((pl) => pl.map((p) => [p.X / SCL, p.Y / SCL]));
+    // Resolve self-intersections introduced by the offset (fold-backs at
+    // near-touching features — e.g. between close letters) and drop
+    // degenerate edges. SimplifyPolygons is Clipper's dedicated cleanup op.
+    const cleaned = CL.Clipper.SimplifyPolygons(sol, CL.PolyFillType.pftEvenOdd);
+    return (cleaned || [])
+      .map((pl) => simplify(pl.map((p) => [p.X / SCL, p.Y / SCL]), 0.002))
+      .filter((pl) => pl.length >= 3);
   }
 
   /**
@@ -516,7 +547,8 @@
   function unionContours(contours, opts) {
     opts = opts || {};
     const closed = contours.filter((c) => c.closed && c.pts.length > 2);
-    if (closed.length < 2 || typeof PolyBool === 'undefined') {
+    const PB = getPolyBool();
+    if (closed.length < 2 || !PB) {
       return closed.map((c) => ({ pts: c.pts.slice(), closed: true }));
     }
     const tol = opts.tol != null ? opts.tol : 0.04;
@@ -564,11 +596,11 @@
         let acc = null;
         for (const o of outers) {
           const poly = { regions: [simplifyClosed(o.pts, tol)], invert: false };
-          acc = acc ? PolyBool.union(acc, poly) : poly;
+          acc = acc ? PB.union(acc, poly) : poly;
         }
         for (const h of holes) {
           if (!acc) { acc = { regions: [simplifyClosed(h.pts, tol)], invert: false }; continue; }
-          acc = PolyBool.difference(acc, { regions: [simplifyClosed(h.pts, tol)], invert: false });
+          acc = PB.difference(acc, { regions: [simplifyClosed(h.pts, tol)], invert: false });
         }
         if (acc) {
           for (const r of acc.regions) {
@@ -675,6 +707,38 @@
     return polylines.map((pl) => pl.map(inv));
   }
 
+  /**
+   * Contour-parallel pocket: carve rings that FOLLOW the polygon shapes.
+   * First ring offsets the (unioned) region inward by the tool radius so the
+   * tool edge lands exactly on the boundary — the same offset the boss mode
+   * uses, just negative. Each further ring steps inward by the stepover.
+   * Iterates until the region is consumed (features narrower than the tool
+   * vanish automatically inside Clipper).
+   * tool: { diameter, stepoverPct, contourPass }
+   * Returns array of closed cut polylines (outermost ring first).
+   */
+  function contourPocket(contours, tool) {
+    const dia = tool.diameter || 2;
+    const r = dia / 2;
+    const stepover = Math.max(0.05, dia * (tool.stepoverPct / 100));
+    const paths = [];
+    let loops = contours.filter((c) => c.closed && c.pts.length > 2);
+    let delta = -r;          // first ring: tool edge on the boundary
+    let first = true;
+    let guard = 20000;       // safety against numerical no-progress loops
+    while (loops.length && guard-- > 0) {
+      const off = clipperOffsetLoops(loops, delta);
+      if (!off || !off.length) break;
+      if (!(first && !tool.contourPass)) {
+        for (const p of off) paths.push(p.concat([p[0]]));
+      }
+      loops = off.map((pts) => ({ pts, closed: true }));
+      delta = -stepover;     // subsequent rings: one stepover inward
+      first = false;
+    }
+    return paths;
+  }
+
   /** Check whether a short connector crosses only material to be removed. */
   function connectorInside(a, b, prevLine, curLine, contours, fwd) {
     if (!prevLine || !curLine) return false;
@@ -727,16 +791,9 @@
     }
 
     if (mode === 'pocket') {
-      if (tool.contourPass) {
-        // shrink the region by the tool radius so the tool stays inside the
-        // letters (features narrower than the tool vanish automatically)
-        const off = offsetGlyphContours(contours, -r);
-        for (const p of off) paths.push(p.concat([p[0]]));
-      }
-      const stepover = Math.max(0.05, (tool.diameter || 2) * (tool.stepoverPct / 100));
-      const hatch = hatchFill(contours, tool.hatchAngle || 0, stepover, !!tool.zigzag);
-      for (const h of hatch) paths.push(h);
-      return paths;
+      // contour-parallel pocketing: rings follow the letter shapes, stepping
+      // inward by the tool radius (first ring) then the stepover, until done
+      return contourPocket(contours, tool);
     }
 
     return paths;
@@ -763,6 +820,7 @@
     offsetGlyphContours,
     unionContours,
     simplifyClosed,
+    contourPocket,
     hatchFill,
     pointInRegion,
     buildCutPaths,

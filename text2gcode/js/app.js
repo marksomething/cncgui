@@ -52,9 +52,7 @@
     toolType: $('toolType'),
     pocketOptions: $('pocketOptions'),
     stepover: $('stepover'),
-    hatchAngle: $('hatchAngle'),
     contourPass: $('contourPass'),
-    zigzag: $('zigzag'),
     safeZ: $('safeZ'),
     cutDepth: $('cutDepth'),
     passDepth: $('passDepth'),
@@ -80,7 +78,7 @@
   const MODE_HINTS = {
     single: 'Engraves fast single-stroke strokes along the middle of every letter — ideal for V-bits and engraving cutters.',
     boss: 'Leaves the letters as a raised boss: traces around the UNION of all letters, offset outward by the tool radius. Overlapping letters merge into one boundary — no cut lines between them.',
-    pocket: 'Clears the inside of every letter, like pocketing. The contour pass is offset inward by the tool radius; stepover controls fill density.',
+    pocket: 'Carves concentric rings that follow the letter shapes: the first pass hugs the boundary (tool edge exactly on it, offset by the tool radius), then rings step inward by the stepover until the pocket is cleared.',
   };
 
   // ------------------------------------------------------------------
@@ -238,9 +236,7 @@
     return {
       diameter: num(els.toolDiameter, 3),
       stepoverPct: num(els.stepover, 45),
-      hatchAngle: num(els.hatchAngle, 0),
       contourPass: els.contourPass.checked,
-      zigzag: els.zigzag.checked,
     };
   }
 
@@ -674,7 +670,7 @@
   [els.height, els.lineSpacing, els.letterSpacing, els.toolDiameter, els.stepover].forEach((el) => {
     el.addEventListener('input', () => { setSliderFill(el); scheduleRegen(); });
   });
-  [els.align, els.hatchAngle, els.toolType, els.contourPass, els.zigzag, els.returnHome,
+  [els.align, els.toolType, els.contourPass, els.returnHome,
    els.safeZ, els.cutDepth, els.passDepth, els.spindleRPM, els.feedXY, els.feedPlunge].forEach((el) => {
     el.addEventListener('change', scheduleRegen);
   });
