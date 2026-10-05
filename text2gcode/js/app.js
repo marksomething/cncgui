@@ -581,11 +581,15 @@
     sim.lastT = now;
 
     if (sim.playing && !sim.done) {
-      let budget = num(els.simSpeed, 80) * dt; // mm to travel (cut speed)
+      // speed multiplier: 1× = real time (feeds from machine settings)
+      const speedMult = num(els.simSpeed, 1);
+      const cutMMs = Math.max(0.1, lastResult.settings.feedXY) / 60;
+      const rapidMMs = Math.max(0.5, lastResult.settings.rapidFeed || 3000) / 60;
+      let budget = speedMult * dt; // "seconds of machine time" this frame
       while (budget > 0) {
         const m = lastResult.moves[sim.moveIdx];
         if (!m) { sim.done = true; sim.playing = false; els.btnSim.textContent = '▶ Simulate'; break; }
-        const mult = m.type === 'rapid' ? 8 : 1; // rapids run faster in sim
+        const mult = m.type === 'rapid' ? rapidMMs / cutMMs : 1; // real rapid/cut ratio
         const remaining = (moveLength(m) - sim.distInto) / mult;
         if (budget >= remaining) {
           budget -= remaining;
@@ -777,6 +781,10 @@
     [els.passDepth, 'passDepthVal', (v) => v + ' mm'],
     [els.feedXY, 'feedXYVal', (v) => v],
     [els.feedPlunge, 'feedPlungeVal', (v) => v],
+    [els.simSpeed, 'simSpeedVal', (v) => {
+      const x = parseFloat(v);
+      return Math.abs(x - 1) < 1e-9 ? '×1.0 · real time' : '×' + x.toFixed(2).replace(/\.?0+$/, '');
+    }],
   ];
   labelBind.forEach(([el, id, f]) => {
     const update = () => { $(id).textContent = f(el.value); if (el.type === 'range') setSliderFill(el); };
@@ -841,6 +849,15 @@
   els.btnSimReset.addEventListener('click', () => {
     resetSim();
     renderPreview();
+  });
+
+  // detent: snapping to 1× (real time) when the slider is released near it
+  els.simSpeed.addEventListener('change', () => {
+    const v = parseFloat(els.simSpeed.value);
+    if (isFinite(v) && Math.abs(v - 1) <= 0.075) {
+      els.simSpeed.value = '1';
+      els.simSpeed.dispatchEvent(new Event('input', { bubbles: false }));
+    }
   });
 
   els.btnDownload.addEventListener('click', () => {

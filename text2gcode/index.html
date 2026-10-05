@@ -173,7 +173,13 @@ CNC</textarea>
             <span class="legend-item"><i class="swatch head"></i> Tool (sim)</span>
           </div>
           <div class="sim-controls">
-            <input type="range" id="simSpeed" min="5" max="400" step="5" value="80" title="Simulation speed (mm/s)" />
+            <span class="sim-speed-label">Sim speed</span>
+            <div class="sim-slider-wrap">
+              <input type="range" id="simSpeed" min="0.25" max="20" step="0.05" value="4"
+                title="Simulation speed multiplier — 1× = real time (cut moves run at the configured XY feed, rapids at the rapid rate)" />
+              <span class="sim-tick" title="1× = real time"></span>
+            </div>
+            <em id="simSpeedVal" class="sim-speed-val">×4.0</em>
             <button id="btnSim" class="btn ghost" title="Simulate the exact path taken">▶ Simulate</button>
             <button id="btnSimReset" class="btn ghost" title="Reset simulation">↺</button>
           </div>

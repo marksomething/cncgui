@@ -201,6 +201,39 @@ input[type="range"]::-moz-range-thumb {
 
 .sim-controls { display: flex; align-items: center; gap: 10px; }
 .sim-controls input[type="range"] { width: 140px; }
+.sim-speed-label { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.sim-speed-val {
+  font-style: normal;
+  font-size: 12px; font-weight: 600;
+  color: var(--accent-glow);
+  min-width: 92px; text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sim-slider-wrap { position: relative; display: flex; align-items: center; }
+/* detent notch marking where 1× (real time) sits on the track:
+   (1 - 0.25) / (20 - 0.25) ≈ 3.8% along the slider */
+.sim-tick {
+  position: absolute;
+  left: calc(3.8% + 7px); /* + half thumb width so it marks the thumb CENTER at 1× */
+  top: 50%;
+  width: 2px; height: 14px;
+  transform: translateY(-50%);
+  background: rgba(240, 171, 252, .75);
+  border-radius: 1px;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(240, 171, 252, .6);
+}
+.sim-tick::after {
+  content: '1×';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8.5px;
+  color: rgba(240, 171, 252, .8);
+  letter-spacing: .5px;
+}
 
 .canvas-wrap {
   position: relative;
