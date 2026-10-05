@@ -741,9 +741,11 @@
   function syncModeAvailability() {
     const font = selectedFont();
     const ttf = font && font.kind === 'ttf';
-    document.querySelector('[data-mode="single"]').disabled = ttf;
-    document.querySelector('[data-mode="boss"]').disabled = !ttf;
-    document.querySelector('[data-mode="pocket"]').disabled = !ttf;
+    // guard: never hard-crash the app over a missing mode button
+    [['single', ttf], ['boss', !ttf], ['pocket', !ttf]].forEach(([m, dis]) => {
+      const btn = document.querySelector('[data-mode="' + m + '"]');
+      if (btn) btn.disabled = dis;
+    });
     if (ttf) {
       els.fontHint.innerHTML = 'Outline (TTF) font — supports <b>boss</b> &amp; <b>pocket</b> modes. Load any .ttf/.otf you own.';
     } else {
