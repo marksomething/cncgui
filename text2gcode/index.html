@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text2GCode — CNC Text Engraving Generator</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">✦</div>
+      <div>
+        <h1>Text<span>2</span>GCode</h1>
+        <p class="tagline">Turn text into CNC engraving toolpaths</p>
+      </div>
+    </div>
+    <div class="topbar-stats" id="topStats"></div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ CONTROLS ============ -->
+    <aside class="controls">
+
+      <section class="card">
+        <h2><span class="step">1</span> Text</h2>
+        <textarea id="text" rows="3" spellcheck="false">HELLO
+CNC</textarea>
+        <div class="row">
+          <label class="field">
+            <span>Height <em id="heightVal">30 mm</em></span>
+            <input type="range" id="height" min="5" max="120" step="1" value="30" />
+          </label>
+        </div>
+        <div class="row two">
+          <label class="field">
+            <span>Line spacing <em id="lineSpacingVal">1.0×</em></span>
+            <input type="range" id="lineSpacing" min="0.6" max="3" step="0.05" value="1" />
+          </label>
+          <label class="field">
+            <span>Letter spacing <em id="letterSpacingVal">0 mm</em></span>
+            <input type="range" id="letterSpacing" min="-2" max="10" step="0.1" value="0" />
+          </label>
+        </div>
+        <div class="row">
+          <label class="field">
+            <span>Alignment</span>
+            <select id="align">
+              <option value="left" selected>Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">2</span> Font</h2>
+        <div class="row">
+          <label class="field">
+            <span>Font face</span>
+            <select id="font" size="1"></select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="upload-btn">
+            📁 Load your own font (.ttf / .otf)
+            <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden />
+          </label>
+        </div>
+        <p class="hint" id="fontHint">Outline fonts support <b>boss</b> &amp; <b>pocket</b> modes. Single-stroke fonts are made for engraving.</p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">3</span> Engraving mode</h2>
+        <div class="modes" id="modes">
+          <button class="mode-btn" data-mode="single" title="Fast single-stroke engraving along the letter centerlines">
+            <span class="mode-icon">✍️</span>
+            <b>Single line</b>
+            <small>Centerline strokes</small>
+          </button>
+          <button class="mode-btn active" data-mode="boss" title="Leave the letters as a raised boss — cut around the union of all letters, offset by the tool radius">
+            <span class="mode-icon">⬡</span>
+            <b>Boss</b>
+            <small>Cut around letters</small>
+          </button>
+          <button class="mode-btn" data-mode="pocket" title="Clear the inside of every letter (pocketing) with hatch fill">
+            <span class="mode-icon">▨</span>
+            <b>Pocket</b>
+            <small>Clear letter inside</small>
+          </button>
+        </div>
+        <p class="hint" id="modeHint">Leaves the letters as a raised boss: the tool traces around all letters considered together, offset outward by the tool radius. Overlapping letters merge — no cut between them.</p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">4</span> Tool &amp; fill</h2>
+        <div class="row two">
+          <label class="field">
+            <span>Tool diameter <em id="toolDiameterVal">3.0 mm</em></span>
+            <input type="range" id="toolDiameter" min="0.1" max="10" step="0.1" value="3" />
+          </label>
+          <label class="field">
+            <span>Tool type</span>
+            <select id="toolType">
+              <option value="endmill" selected>End mill (flat)</option>
+              <option value="vbit">V-bit / engraver</option>
+              <option value="laser">Laser</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">Boss &amp; pocket automatically offset by the <b>tool radius</b> (half the tool diameter), so the tool edge lands exactly on the letter boundary.</p>
+        <div id="pocketOptions" class="hidden">
+          <div class="row two">
+            <label class="field">
+              <span>Stepover <em id="stepoverVal">45%</em></span>
+              <input type="range" id="stepover" min="5" max="95" step="1" value="45" />
+            </label>
+            <label class="field">
+              <span>Hatch angle</span>
+              <select id="hatchAngle">
+                <option value="0" selected>0° (horizontal)</option>
+                <option value="45">45°</option>
+                <option value="90">90° (vertical)</option>
+              </select>
+            </label>
+          </div>
+          <div class="row checks">
+            <label class="check"><input type="checkbox" id="contourPass" checked /> Contour pass around letters</label>
+            <label class="check"><input type="checkbox" id="zigzag" /> Connect fill lines (zigzag)</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">5</span> Machine</h2>
+        <div class="row two">
+          <label class="field">
+            <span>Safe Z <em id="safeZVal">5 mm</em></span>
+            <input type="number" id="safeZ" value="5" step="0.5" min="0.5" />
+          </label>
+          <label class="field">
+            <span>Cut depth <em id="cutDepthVal">1 mm</em></span>
+            <input type="number" id="cutDepth" value="1" step="0.1" min="0.05" />
+          </label>
+        </div>
+        <div class="row two">
+          <label class="field">
+            <span>Depth per pass <em id="passDepthVal">0.5 mm</em></span>
+            <input type="number" id="passDepth" value="0.5" step="0.1" min="0.05" />
+          </label>
+          <label class="field">
+            <span>Spindle RPM</span>
+            <input type="number" id="spindleRPM" value="12000" step="500" min="0" />
+          </label>
+        </div>
+        <div class="row two">
+          <label class="field">
+            <span>Feed XY <em id="feedXYVal">800</em> mm/min</span>
+            <input type="number" id="feedXY" value="800" step="50" min="10" />
+          </label>
+          <label class="field">
+            <span>Plunge feed <em id="feedPlungeVal">200</em> mm/min</span>
+            <input type="number" id="feedPlunge" value="200" step="25" min="5" />
+          </label>
+        </div>
+        <div class="row checks">
+          <label class="check"><input type="checkbox" id="returnHome" checked /> Return to origin at end</label>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ============ PREVIEW ============ -->
+    <section class="preview-pane">
+      <div class="card preview-card">
+        <div class="preview-toolbar">
+          <div class="legend">
+            <span class="legend-item"><i class="swatch cut"></i> Cut</span>
+            <span class="legend-item"><i class="swatch rapid"></i> Rapid</span>
+            <span class="legend-item"><i class="swatch head"></i> Tool (sim)</span>
+          </div>
+          <div class="sim-controls">
+            <input type="range" id="simSpeed" min="5" max="400" step="5" value="80" title="Simulation speed (mm/s)" />
+            <button id="btnSim" class="btn ghost" title="Simulate the exact path taken">▶ Simulate</button>
+            <button id="btnSimReset" class="btn ghost" title="Reset simulation">↺</button>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="preview"></canvas>
+          <div id="simStatus" class="sim-status hidden"></div>
+          <div id="previewEmpty" class="preview-empty">Enter some text to preview the toolpath ✦</div>
+        </div>
+        <div class="stats" id="stats"></div>
+        <div class="actions">
+          <button id="btnDownload" class="btn primary" disabled>⬇ Download GCode</button>
+          <button id="btnCopy" class="btn ghost" disabled>⧉ Copy</button>
+          <button id="btnToggleGcode" class="btn ghost">‹ ›</button>
+        </div>
+        <div id="gcodePanel" class="gcode-panel hidden">
+          <pre id="gcodePreview"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Always dry-run &amp; verify generated GCode before cutting. Y-up, mm, origin at bottom-left of the text.</span>
+  </footer>
+
+  <script src="js/error-report.js"></script>
+  <script src="vendor/opentype.min.js"></script>
+  <script src="vendor/polybool.min.js"></script>
+  <script src="vendor/clipper.min.js"></script>
+  <script src="js/hershey_fonts.js"></script>
+  <script src="js/fonts_embedded.js"></script>
+  <script src="js/toolpath.js"></script>
+  <script src="js/gcode.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
