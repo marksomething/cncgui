@@ -14,29 +14,54 @@
    * Expand cut paths into a machine move list (including depth passes).
    * paths: [[x,y],...] cut polylines (mm, y-up)
    * settings: { safeZ, cutDepth, passDepth, feedXY, feedPlunge, rapidFeed }
-   * returns { moves: [{type:'rapid'|'cut', pts, z, pass}], stats }
+   *
+   * Every move carries its exact machine time `t` (seconds) and 3D-ish length
+   * `len`, computed from the configured feeds. This is the single source of
+   * truth for BOTH the estimated job time and the ×1 real-time simulation —
+   * they agree by construction. Sequence per path:
+   *   rapid (at safe Z) → [plunge → cut → retract] × depth passes
+   * returns { moves, passes, stats }
    */
   function buildMoves(paths, settings) {
     const safeZ = settings.safeZ;
     const cutDepth = Math.max(0.01, settings.cutDepth);
     const passDepth = Math.max(0.05, settings.passDepth || cutDepth);
     const passes = Math.max(1, Math.ceil(cutDepth / passDepth));
+    const fCut = Math.max(1, settings.feedXY);
+    const fPlunge = Math.max(1, settings.feedPlunge);
+    const fRapid = Math.max(1, settings.rapidFeed || 3000);
 
     const moves = [];
-    let cutLen = 0;      // per pass
-    let rapidLen = 0;
+    let cutLen = 0;      // total cutting travel (all passes)
+    let rapidLen = 0;    // total rapid travel
+    let totalT = 0;      // total machine time (s)
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let prevX = 0, prevY = 0; // machine starts at origin (or home)
+
+    const pushMove = (type, pts, z, pass, len, feed) => {
+      const t = (len / feed) * 60; // seconds
+      moves.push({ type, pts, z, pass, len, t });
+      totalT += t;
+    };
 
     for (const pts of paths) {
       if (pts.length < 2) continue;
-      // rapid to start (positioning move at safe height)
-      moves.push({ type: 'rapid', pts: [[pts[0][0], pts[0][1]]], z: safeZ, pass: 0 });
+      const start = pts[0];
+      const end = pts[pts.length - 1];
+      // rapid positioning at safe height
+      const rl = Math.hypot(start[0] - prevX, start[1] - prevY);
+      pushMove('rapid', [[start[0], start[1]]], safeZ, 0, rl, fRapid);
+      rapidLen += rl;
+      prevX = start[0]; prevY = start[1];
       for (let p = 0; p < passes; p++) {
         const z = -Math.min(cutDepth, passDepth * (p + 1));
-        const start = [pts[0][0], pts[0][1]];
-        moves.push({ type: 'plunge', pts: [start], z, pass: p });
-        moves.push({ type: 'cut', pts, z, pass: p });
-        cutLen += polyLen(pts);
+        const vlen = safeZ - z; // vertical travel safeZ <-> z
+        pushMove('plunge', [[start[0], start[1]]], z, p, vlen, fPlunge);
+        const cl = polyLen(pts);
+        pushMove('cut', pts, z, p, cl, fCut);
+        cutLen += cl;
+        pushMove('retract', [[end[0], end[1]]], safeZ, p, vlen, fRapid);
+        prevX = end[0]; prevY = end[1];
       }
       // bounds from cut geometry
       for (const pt of pts) {
@@ -46,20 +71,6 @@
         if (pt[1] > maxY) maxY = pt[1];
       }
     }
-
-    // total rapid length: origin to each path start + between paths (approx, at safe Z)
-    let prev = null;
-    for (const m of moves) {
-      if (m.type === 'rapid') {
-        if (prev) rapidLen += Math.hypot(m.pts[0][0] - prev[0], m.pts[0][1] - prev[1]);
-        prev = m.pts[0];
-      }
-    }
-    const plungeCount = moves.filter((m) => m.type === 'plunge').length;
-    const estTimeSec =
-      (cutLen) / Math.max(1, settings.feedXY) * 60 +                     // cutting (s, incl. passes)
-      (rapidLen / Math.max(1, settings.rapidFeed || 3000)) * 60 +        // rapids (s)
-      (cutDepth * plungeCount) / Math.max(1, settings.feedPlunge) * 60;  // plunges (s)
 
     return {
       moves,
@@ -71,7 +82,8 @@
         rapidLength: rapidLen,
         passes,
         paths: paths.length,
-        estTimeMin: estTimeSec / 60,
+        machTimeSec: totalT,
+        estTimeMin: totalT / 60,
       },
     };
   }
@@ -121,13 +133,17 @@
     for (let mi = 0; mi < info.moves.length; mi++) {
       const mv = info.moves[mi];
       if (mv.pass !== lastPass) {
-        if (lastPass !== -1) { emit(`G0 Z${fmt(s.safeZ)}`); emit(''); }
+        if (lastPass !== -1) emit('');
         if (mv.type !== 'rapid') emit(`; --- depth pass ${mv.pass + 1} of ${info.passes} (Z ${fmt(mv.z)}) ---`);
         lastPass = mv.pass;
         firstCutInPass = true;
       }
       if (mv.type === 'rapid') {
         emit(`G0 X${fmt(mv.pts[0][0])} Y${fmt(mv.pts[0][1])}`, { move: mi });
+      } else if (mv.type === 'retract') {
+        // Z-only rapid lift after each depth pass (the final retract of the
+        // last pass doubles as the end-of-program retract)
+        emit(`G0 Z${fmt(s.safeZ)}`, { move: mi });
       } else if (mv.type === 'plunge') {
         emit(`G1 Z${fmt(mv.z)} F${fmt(s.feedPlunge)}`, { move: mi });
         firstCutInPass = true;
@@ -142,7 +158,7 @@
       }
     }
     emit('');
-    emit(`G0 Z${fmt(s.safeZ)} ; final retract`);
+    // final retract was already emitted as the last depth pass's retract move
     if (s.spindleRPM > 0) emit('M5 ; spindle off');
     if (s.returnHome) emit('G0 X0 Y0 ; return to origin');
     emit('M2 ; program end');

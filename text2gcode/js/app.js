@@ -85,8 +85,8 @@
   // State
   // ------------------------------------------------------------------
   let lastResult = null;    // { moves, passes, stats, gcode, gcodeLineMap, settings, meta }
-  let currentMode = 'boss';
-  let sim = { active: false, playing: false, moveIdx: 0, distInto: 0, done: false };
+  let currentMode = 'pocket'; // pocket unless the active font is a single-stroke line font
+  let sim = { active: false, playing: false, moveIdx: 0, tInto: 0, elapsed: 0, done: false };
   let gcodeHighlight = null; // { line, move, pt } — gcode line clicked in preview
 
   // ------------------------------------------------------------------
@@ -273,9 +273,9 @@
       return;
     }
 
-    // Hershey fonts can only do single-line; TTF fonts can't
+    // Hershey (line) fonts can only do single-line; outline fonts pocket/boss
     if (font.kind === 'hershey' && currentMode !== 'single') setMode('single', true);
-    if (font.kind === 'ttf' && currentMode === 'single') setMode('boss', true);
+    if (font.kind === 'ttf' && currentMode === 'single') setMode('pocket', true);
 
     const opts = {
       size: num(els.height, 30),
@@ -445,6 +445,7 @@
       ctx.arc(toX(mv.pts[0][0]), toY(mv.pts[0][1]), 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    // 'retract' moves are Z-only lifts — nothing to draw in XY
   }
 
   function renderPreview() {
@@ -535,7 +536,7 @@
       const mv = lastResult.moves[gcodeHighlight.move];
       if (mv) {
         els.simStatus.textContent = 'Line ' + (gcodeHighlight.line + 1) + ' — ' +
-          (mv.type === 'rapid' ? 'rapid move' : mv.type === 'plunge' ? 'plunge' : 'cut') +
+          (mv.type === 'rapid' ? 'rapid move' : mv.type === 'plunge' ? 'plunge' : mv.type === 'retract' ? 'retract (rapid)' : 'cut') +
           ' · Z ' + mv.z.toFixed(3) + 'mm · pass ' + ((mv.pass || 0) + 1) + '/' + lastResult.passes;
         els.simStatus.classList.remove('hidden');
         return;
@@ -547,20 +548,15 @@
   // ------------------------------------------------------------------
   // Simulation ("demo the path taken")
   // ------------------------------------------------------------------
-  function moveLength(mv) {
-    if (mv.type === 'plunge') return 2; // small time beat for plunges
-    return Toolpath.polyLength(mv.pts);
-  }
-
   function resetSim() {
-    sim = { active: false, playing: false, moveIdx: 0, distInto: 0, done: false };
+    sim = { active: false, playing: false, moveIdx: 0, tInto: 0, done: false };
     els.simStatus.classList.add('hidden');
     els.btnSim.textContent = '▶ Simulate';
   }
 
   function startSim() {
     if (!lastResult || !lastResult.moves.length) return;
-    sim = { active: true, playing: true, moveIdx: 0, distInto: 0, done: false };
+    sim = { active: true, playing: true, moveIdx: 0, tInto: 0, done: false };
     els.btnSim.textContent = '⏸ Pause';
     els.simStatus.classList.remove('hidden');
     sim.lastT = performance.now();
@@ -581,22 +577,23 @@
     sim.lastT = now;
 
     if (sim.playing && !sim.done) {
-      // speed multiplier: 1× = real time (feeds from machine settings)
+      // advance in REAL seconds × multiplier; each move consumes exactly its
+      // machine time m.t (seconds, from the same model as the time estimate)
+      // so ×1 simulation stays in lockstep with the estimated job time
       const speedMult = num(els.simSpeed, 1);
-      const cutMMs = Math.max(0.1, lastResult.settings.feedXY) / 60;
-      const rapidMMs = Math.max(0.5, lastResult.settings.rapidFeed || 3000) / 60;
-      let budget = speedMult * dt; // "seconds of machine time" this frame
+      let budget = speedMult * dt;
       while (budget > 0) {
         const m = lastResult.moves[sim.moveIdx];
         if (!m) { sim.done = true; sim.playing = false; els.btnSim.textContent = '▶ Simulate'; break; }
-        const mult = m.type === 'rapid' ? rapidMMs / cutMMs : 1; // real rapid/cut ratio
-        const remaining = (moveLength(m) - sim.distInto) / mult;
+        const remaining = (m.t || 0) - sim.tInto;
         if (budget >= remaining) {
           budget -= remaining;
-          sim.distInto = 0;
+          sim.elapsed += remaining;
+          sim.tInto = 0;
           sim.moveIdx++;
         } else {
-          sim.distInto += budget * mult;
+          sim.tInto += budget;
+          sim.elapsed += budget;
           budget = 0;
         }
       }
@@ -606,10 +603,13 @@
 
     const total = lastResult.moves.length;
     const mv = lastResult.moves[sim.moveIdx]; // refreshed after advancing
+    const elapsed = lastResult.stats ? lastResult.stats.machTimeSec : 0;
+    const label = mv ? (mv.type === 'rapid' ? 'rapid' : mv.type === 'plunge' ? 'plunge' : mv.type === 'retract' ? 'retract' : 'cut') : '';
     els.simStatus.textContent = sim.done
       ? '✓ Simulation complete'
       : `Simulating — move ${Math.min(sim.moveIdx + 1, total)}/${total}` +
-        (mv ? ` · ${mv.type === 'rapid' ? 'rapid' : 'cut'} Z=${mv.z.toFixed(1)}mm · pass ${(mv.pass || 0) + 1}/${lastResult.passes}` : '');
+        ` · ${fmtTime(sim.elapsed / 60)} / ${fmtTime(elapsed / 60)}` +
+        (mv ? ` · ${label} Z=${mv.z.toFixed(1)}mm · pass ${(mv.pass || 0) + 1}/${lastResult.passes}` : '');
 
     if (sim.active && !sim.done) requestAnimationFrame(simFrame);
     else if (sim.active && sim.done) {
@@ -629,10 +629,12 @@
       ctx.globalAlpha = 0.15;
       for (let i = sim.moveIdx; i < moves.length; i++) drawMovePath(moves[i], null);
       ctx.globalAlpha = 1;
-      // current partial
-      if (mv.type !== 'plunge') drawMovePath(mv, sim.distInto);
+      // current partial: progress fraction from consumed time
+      const frac = mv.t > 0 ? sim.tInto / mv.t : 0;
+      const partial = (mv.len || 0) * frac;
+      if (mv.type === 'cut' || mv.type === 'rapid') drawMovePath(mv, partial);
       // tool head
-      const pos = headPosition(mv, sim.distInto);
+      const pos = headPosition(mv, partial);
       if (pos) {
         const rmm = lastResult.tool.diameter / 2;
         ctx.strokeStyle = 'rgba(240,171,252,.65)';
@@ -649,10 +651,8 @@
   }
 
   function headPosition(mv, dist) {
-    if (!mv || mv.pts.length < 2 || mv.type === 'plunge') {
-      if (mv && mv.type === 'plunge') return mv.pts[0];
-      return null;
-    }
+    if (!mv) return null;
+    if (mv.type === 'plunge' || mv.type === 'retract' || mv.pts.length < 2) return mv.pts[0];
     let drawn = 0;
     for (let i = 1; i < mv.pts.length; i++) {
       const seg = Math.hypot(mv.pts[i][0] - mv.pts[i - 1][0], mv.pts[i][1] - mv.pts[i - 1][1]);
@@ -805,7 +805,7 @@
       // fix mode if now invalid
       const font = selectedFont();
       if (font.kind === 'hershey' && currentMode !== 'single') setMode('single');
-      if (font.kind === 'ttf' && currentMode === 'single') setMode('boss');
+      if (font.kind === 'ttf' && currentMode === 'single') setMode('pocket');
     }
     scheduleRegen();
   });
@@ -821,7 +821,7 @@
       selectedFontId = id;
       initFontSelect();
       syncModeAvailability();
-      if (currentMode === 'single') setMode('boss');
+      if (currentMode === 'single') setMode('pocket');
       regenerate();
     } else {
       alert('Could not parse that font file. Please use a .ttf or .otf file.');
@@ -927,7 +927,7 @@
   } catch (e) { /* noop */ }
 
   els.previewEmpty.textContent = 'Loading fonts… ✦';
-  setMode('boss');
+  setMode('pocket'); // default font (Roboto) is an outline font, not a line font
   syncModeAvailability();
   initFonts();
   // first paint (fonts may still be loading)
