@@ -16,14 +16,6 @@ The main concern is that this application emits machine instructions, but simula
 
 **Recommendation:** Model every generated motion in one shared move list, including the return-home move, and distinguish controller-defined rapid motion from feed-controlled motion. Describe the displayed duration as an estimate with explicit assumptions rather than an exact machine-time prediction.
 
-### Medium — Offline-use documentation contradicts actual font loading behavior
-
-**References:** `text2gcode/README.md:6-9, 46-48`; `text2gcode/js/app.js:124-134, 170-172, 195-200`; `text2gcode/js/fonts_embedded.js`
-
-The README first explains that Roboto is embedded and other outline fonts load lazily, but later says opening `index.html` directly works with “everything (including all fonts)” embedded. The embedded font bundle contains only Roboto; the other bundled TTFs are fetched from relative paths on first selection. Browsers commonly block those fetches under `file://`, and the application itself warns users about that failure.
-
-**Recommendation:** Correct the README to say that the default Roboto/Hershey experience works offline, while other bundled fonts require serving the folder or uploading a font; alternatively, embed the remaining fonts.
-
 ### Medium — Uploaded font filename is inserted into HTML without escaping
 
 **References:** `text2gcode/js/app.js:698-703, 827-838`; `text2gcode/js/gcode.js:118-120`
@@ -46,7 +38,7 @@ The geometry regression tests are a strength: `node --test text2gcode/test/glyph
 
 ## Lower-priority usability note
 
-The height slider is passed to OpenType as the font’s nominal em size (`buildOpenTypeContours` uses `font.getPath(..., size)`). The visible cap height varies by font and is generally not equal to that nominal size. Since the UI calls this “Height,” consider naming it “Em size” or adding a physical-height mode; the reported output bounds already provide a useful check of the actual result.
+The em-size slider controls the nominal font em size passed to OpenType (`buildOpenTypeContours` uses `font.getPath(..., size)`). Visible cap height varies by font and is generally not equal to that nominal size; the reported output bounds show the actual resulting dimensions.
 
 ## Verification performed
 

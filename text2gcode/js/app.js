@@ -40,7 +40,7 @@
   // ------------------------------------------------------------------
   const els = {
     text: $('text'),
-    height: $('height'),
+    emSize: $('emSize'),
     lineSpacing: $('lineSpacing'),
     letterSpacing: $('letterSpacing'),
     align: $('align'),
@@ -281,7 +281,7 @@
     if (font.kind === 'ttf' && currentMode === 'single') setMode('pocket', true);
 
     const opts = {
-      size: num(els.height, 30),
+      size: num(els.emSize, 30),
       lineHeightMult: num(els.lineSpacing, 1),
       letterSpacingMM: num(els.letterSpacing, 0),
       align: els.align.value,
@@ -772,7 +772,7 @@
   }
 
   els.text.addEventListener('input', scheduleRegen);
-  [els.height, els.lineSpacing, els.letterSpacing, els.toolDiameter, els.stepover].forEach((el) => {
+  [els.emSize, els.lineSpacing, els.letterSpacing, els.toolDiameter, els.stepover].forEach((el) => {
     el.addEventListener('input', () => { setSliderFill(el); scheduleRegen(); });
   });
   [els.align, els.contourPass, els.returnHome,
@@ -782,7 +782,7 @@
 
   // update value labels live (sliders + number inputs)
   const labelBind = [
-    [els.height, 'heightVal', (v) => v + ' mm'],
+    [els.emSize, 'emSizeVal', (v) => v + ' mm'],
     [els.lineSpacing, 'lineSpacingVal', (v) => parseFloat(v).toFixed(2) + '×'],
     [els.letterSpacing, 'letterSpacingVal', (v) => parseFloat(v).toFixed(1) + ' mm'],
     [els.toolDiameter, 'toolDiameterVal', (v) => parseFloat(v).toFixed(1) + ' mm'],

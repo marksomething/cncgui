@@ -85,7 +85,7 @@ for (const [file, table] of Object.entries(HOLE_TABLES)) {
 
 // ----------------------------------------------------------------------
 // The original bug scenario end-to-end: defaults (Roboto, pocket mode,
-// 3 mm end mill) with a single lowercase 'd' at 58 mm text height.
+// 3 mm end mill) with a single lowercase 'd' at 58 mm em size.
 // ----------------------------------------------------------------------
 test('regression: Roboto d keeps its counter at every size', () => {
   for (const size of [5, 10, 30, 58, 100, 120]) {

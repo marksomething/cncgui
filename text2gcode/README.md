@@ -1,8 +1,9 @@
 # ✦ Text2GCode — CNC Text Engraving Generator
 
 A self-contained static website that converts **text + a font choice** into a
-**CNC GCode** file for engraving. No build step, no server-side code — just open
-`index.html` in a browser (or serve the folder with any static file server).
+**CNC GCode** file for engraving. There is no build step or server-side code.
+Open `index.html` to use the embedded fonts, or serve the folder with any static
+file server to load all bundled outline fonts.
 
 ## Features
 
@@ -26,7 +27,7 @@ A self-contained static website that converts **text + a font choice** into a
     inward by the tool radius), then rings step inward by the stepover until
     the pocket is fully cleared. Also operates on the union, so overlapping
     letters pocket as one.
-- **Layout controls**: text height, multi-line text, line spacing, letter spacing, alignment
+- **Layout controls**: font em size, multi-line text, line spacing, letter spacing, alignment
 - **Tool controls**: diameter, depth per pass, multiple depth passes
 - **Machine settings**: safe Z, cut depth, feeds (XY + plunge), spindle RPM, return to home
 - **Live preview** of the toolpath on a gridded canvas (cut swathes shown at tool width)
@@ -43,10 +44,12 @@ python3 -m http.server 8000
 # then open http://localhost:8000/text2gcode/
 ```
 
-Or simply open `index.html` directly — everything (including all fonts) is
-embedded in the page, no internet and no web server needed. This also works
-when opened via `file://` in Safari, which blocks network requests for local
-files.
+You can also open `index.html` directly via `file://` without a server or
+internet connection. In that mode, the embedded Roboto font and bundled Hershey
+single-stroke fonts are available. The other bundled outline fonts are loaded
+lazily from relative `.ttf` files, which browsers commonly block under `file://`;
+serve the folder over HTTP to use those fonts. You can also upload a local font
+file with the font picker.
 
 ## How it works
 
